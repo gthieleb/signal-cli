@@ -33,7 +33,7 @@ import java.util.UUID;
 public class AccountDatabase extends Database {
 
     private static final Logger logger = LoggerFactory.getLogger(AccountDatabase.class);
-    private static final long DATABASE_VERSION = 28;
+    private static final long DATABASE_VERSION = 29;
 
     private AccountDatabase(final HikariDataSource dataSource) {
         super(logger, DATABASE_VERSION, dataSource);
@@ -59,6 +59,25 @@ public class AccountDatabase extends Database {
         KeyValueStore.createSql(connection);
         CdsiStore.createSql(connection);
         UnknownStorageIdStore.createSql(connection);
+        try (final var statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                                    CREATE TABLE message_store (
+                                      _id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                      thread_id TEXT NOT NULL,
+                                      sender_address TEXT NOT NULL,
+                                      recipient_address TEXT,
+                                      timestamp INTEGER NOT NULL,
+                                      body TEXT,
+                                      message_type INTEGER NOT NULL CHECK (message_type IN (0, 1)),
+                                      group_id TEXT,
+                                      envelope_metadata TEXT NOT NULL DEFAULT '{}',
+                                      created_at INTEGER NOT NULL
+                                    ) STRICT;
+                                    """);
+            statement.executeUpdate("CREATE INDEX idx_message_timestamp ON message_store(timestamp)");
+            statement.executeUpdate("CREATE INDEX idx_message_thread ON message_store(thread_id)");
+            statement.executeUpdate("CREATE INDEX idx_message_sender ON message_store(sender_address)");
+        }
     }
 
     @Override
@@ -621,6 +640,28 @@ public class AccountDatabase extends Database {
                                           UNIQUE(group_id, recipient_id)
                                         ) STRICT;
                                         """);
+            }
+        }
+        if (oldVersion < 29) {
+            logger.debug("Updating database: Creating message_store table");
+            try (final var statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                                        CREATE TABLE message_store (
+                                          _id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                          thread_id TEXT NOT NULL,
+                                          sender_address TEXT NOT NULL,
+                                          recipient_address TEXT,
+                                          timestamp INTEGER NOT NULL,
+                                          body TEXT,
+                                          message_type INTEGER NOT NULL CHECK (message_type IN (0, 1)),
+                                          group_id TEXT,
+                                          envelope_metadata TEXT NOT NULL DEFAULT '{}',
+                                          created_at INTEGER NOT NULL
+                                        ) STRICT;
+                                        """);
+                statement.executeUpdate("CREATE INDEX idx_message_timestamp ON message_store(timestamp)");
+                statement.executeUpdate("CREATE INDEX idx_message_thread ON message_store(thread_id)");
+                statement.executeUpdate("CREATE INDEX idx_message_sender ON message_store(sender_address)");
             }
         }
     }
